@@ -2,24 +2,18 @@
 using Godot;
 using System;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
 
 [Tool]
-public partial class GDXAtlasImporter : EditorImportPlugin
+public partial class GDXAtlasTextureImporter : EditorImportPlugin
 {
-	private Regex whitespace_regex = new Regex(@"\s");
-
-	// ----------------------------------------------------------------------------------------------------------------
-	#region system
-
 	public override string _GetImporterName()
 	{
-		return "plyoung.gdx_atlas_importer";
+		return "plyoung.gdx_atlas_texture_importer";
 	}
 
 	public override string _GetVisibleName()
 	{
-		return "GDX Atlas";
+		return "AtlasTexture";
 	}
 
 	public override float _GetPriority()
@@ -39,7 +33,7 @@ public partial class GDXAtlasImporter : EditorImportPlugin
 
 	public override string _GetResourceType()
 	{
-		return "TextureAtlas";
+		return "GDXAtlas";
 	}
 
 	public override int _GetPresetCount()
@@ -62,9 +56,14 @@ public partial class GDXAtlasImporter : EditorImportPlugin
 		return new Godot.Collections.Array<Godot.Collections.Dictionary>();
 	}
 
+	public override bool _GetOptionVisibility(string path, StringName optionName, Godot.Collections.Dictionary options)
+	{
+		return true;
+	}
+
 	public override Error _Import(string sourceFile, string savePath, Godot.Collections.Dictionary options, Godot.Collections.Array<string> platformVariants, Godot.Collections.Array<string> genFiles)
 	{
-		var res = ParseAtlasFile(sourceFile, out List<GDXAtlasEntry> data);
+		var res = GDXAtlasParser.Parse(sourceFile, out List<GDXAtlasEntry> data);
 		if (res != Error.Ok) return res;
 
 		var createdFiles = new List<string>();
@@ -74,107 +73,11 @@ public partial class GDXAtlasImporter : EditorImportPlugin
 		genFiles = new Godot.Collections.Array<string>();
 		genFiles.AddRange(createdFiles);
 
-		// override atlas res withg empty resource to indicate it was processed
+		// override atlas res with empty resource to indicate it was processed
 		ResourceSaver.Save(new Resource(), $"{savePath}.tres");
 
 		return Error.Ok;
 	}
-
-	#endregion
-	// ----------------------------------------------------------------------------------------------------------------
-	#region parser
-
-	private Error ParseAtlasFile(string atlasFile, out List<GDXAtlasEntry> data)
-	{
-		data = new();
-		using var file = FileAccess.Open(atlasFile, FileAccess.ModeFlags.Read);
-		if (file == null) return Error.Failed;
-		if (file.GetError() != Error.Ok) return file.GetError();
-
-		var entry = new GDXAtlasEntry();
-		var fileLength = file.GetLength();
-		while (file.GetPosition() < fileLength)
-		{
-			var line = file.GetLine();
-			line = whitespace_regex.Replace(line, "");
-
-			// property of texture if contains ":" in line
-			if (line.Contains(":"))
-			{
-				var ss = line.Split(':', StringSplitOptions.RemoveEmptyEntries);
-				if (ss.Length == 2)
-				{
-					switch (ss[0])
-					{
-						case "bounds":
-						{
-							if (TryParseRect2I(ss[1], out Rect2I r)) entry.bounds = r;
-							else GD.PrintErr($"Unexpected line encountered: {line}");
-							break;
-						}
-						case "index":
-						{
-							if (int.TryParse(ss[1], out int i)) entry.index = i;
-							else GD.PrintErr($"Unexpected line encountered: {line}");
-							break;
-						}
-						case "split":
-						{
-							entry.is9Slice = true;
-							if (TryParseRect2I(ss[1], out Rect2I r)) entry.split = r;
-							else GD.PrintErr($"Unexpected line encountered: {line}");
-							break;
-						}
-						case "size":
-						{
-							entry.isSource = true;
-							break;
-						}
-					}
-				}
-				else
-				{
-					GD.PrintErr($"Unexpected line encountered: {line}");
-				}
-			}
-			// else, a new entry
-			else
-			{
-				// could be an empty line when reached point where altas split between 2 or more image files
-				if (!string.IsNullOrEmpty(line))
-				{
-					entry = new() { name = line, index = -1 };
-					data.Add(entry);
-				}
-			}
-		}
-
-		return Error.Ok;
-	}
-
-	private bool TryParseRect2I(string input, out Rect2I rect)
-	{
-		var ss = input.Split(',', StringSplitOptions.RemoveEmptyEntries);
-		if (ss.Length == 4)
-		{
-			int.TryParse(ss[0], out int x);
-			int.TryParse(ss[1], out int y);
-			int.TryParse(ss[2], out int w);
-			int.TryParse(ss[3], out int h);
-			rect = new Rect2I(x, y, w, h);
-			return true;
-		}
-		else
-		{
-			GD.PrintErr($"Unexpected Rect encountered: {input}");
-			rect = new Rect2I();
-			return false;
-		}
-	}
-
-	#endregion
-	// ----------------------------------------------------------------------------------------------------------------
-	#region create textures
 
 	private Error CreateResources(string atlasFile, List<GDXAtlasEntry> data, List<string> createdFiles)
 	{
@@ -249,7 +152,7 @@ public partial class GDXAtlasImporter : EditorImportPlugin
 			var atlastTexturePath = basePath.PathJoin(texturePath) + ".tres";
 			var ninePatchPath = basePath.PathJoin(texturePath) + "_9p.tscn";
 
-			// create/update atlast texture
+			// create/update atlas texture
 			AtlasTexture atlasTexture = null;
 			if (dir.FileExists(atlastTexturePath)) 
 			{
@@ -314,7 +217,6 @@ public partial class GDXAtlasImporter : EditorImportPlugin
 		return Error.Ok;
 	}
 
-	#endregion
 	// ----------------------------------------------------------------------------------------------------------------
 }
 #endif
