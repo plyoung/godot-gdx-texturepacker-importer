@@ -100,10 +100,10 @@ public partial class GDXSprite2DImporter : EditorImportPlugin
 	private Error CreateResources(string atlasFile, List<GDXAtlasEntry> data, Godot.Collections.Dictionary options, List<string> createdFiles)
 	{
 		// create the directory where resources will be stored
+		var res = Error.Ok;
 		var folderName = atlasFile.GetFile() + "_sprites";
 		var basePath = atlasFile.GetBaseDir();
-		var dir = DirAccess.Open(basePath);
-		var res = Error.Ok;
+		using var dir = DirAccess.Open(basePath);
 		if (!dir.DirExists(folderName))
 		{
 			res = dir.MakeDir(folderName);
@@ -170,16 +170,21 @@ public partial class GDXSprite2DImporter : EditorImportPlugin
 
 			var spritePath = basePath.PathJoin(texturePath) + ".tscn";
 
-			// create/update sprite
+			// load/create sprite - attempt to first load sprite to keep any manual changes made to it
+			// except for those that this will overwrite, like Texture, RegionRect, etc
+
 			PackedScene spriteScene = null;
+			Sprite2D sprite = null;
+
 			if (dir.FileExists(spritePath))
 			{
 				spriteScene = ResourceLoader.Load<PackedScene>(spritePath, "PackedScene", ResourceLoader.CacheMode.Replace);
+				if (spriteScene != null) sprite = spriteScene.Instantiate() as Sprite2D;
 			}
 
-			spriteScene = spriteScene ?? new PackedScene();
+			if (spriteScene == null) spriteScene = new PackedScene();
+			if (sprite == null) sprite = new Sprite2D();
 
-			var sprite = new Sprite2D();
 			sprite.Name = textureName;
 			sprite.Texture = sourceTexture;
 			sprite.TextureFilter = filter;

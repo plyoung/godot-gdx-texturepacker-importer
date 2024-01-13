@@ -82,10 +82,10 @@ public partial class GDXAtlasTextureImporter : EditorImportPlugin
 	private Error CreateResources(string atlasFile, List<GDXAtlasEntry> data, List<string> createdFiles)
 	{
 		// create the directory where resources will be stored
+		var res = Error.Ok;
 		var folderName = atlasFile.GetFile() + "_textures";
 		var basePath = atlasFile.GetBaseDir();
-		var dir = DirAccess.Open(basePath);
-		var res = Error.Ok;
+		using var dir = DirAccess.Open(basePath);
 		if (!dir.DirExists(folderName))
 		{
 			res = dir.MakeDir(folderName);
