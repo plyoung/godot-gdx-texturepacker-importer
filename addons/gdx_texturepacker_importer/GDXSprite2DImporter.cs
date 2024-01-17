@@ -101,15 +101,28 @@ public partial class GDXSprite2DImporter : EditorImportPlugin
 	{
 		// create the directory where resources will be stored
 		var res = Error.Ok;
-		var folderName = atlasFile.GetFile() + "_sprites";
-		var basePath = atlasFile.GetBaseDir();
+		var texturesRootName = atlasFile.GetFile() + "_textures";
+		var spritesRootName = atlasFile.GetFile() + "_sprites";
+		var basePath = atlasFile.GetBaseDir();		
+		
 		using var dir = DirAccess.Open(basePath);
-		if (!dir.DirExists(folderName))
+
+		if (!dir.DirExists(texturesRootName))
 		{
-			res = dir.MakeDir(folderName);
+			res = dir.MakeDir(texturesRootName);
 			if (res != Error.Ok)
 			{
-				GD.PrintErr($"Failed to create dir: {basePath}/{folderName}");
+				GD.PrintErr($"Failed to create dir: {basePath}/{texturesRootName}");
+				return res;
+			}
+		}
+
+		if (!dir.DirExists(spritesRootName))
+		{
+			res = dir.MakeDir(spritesRootName);
+			if (res != Error.Ok)
+			{
+				GD.PrintErr($"Failed to create dir: {basePath}/{spritesRootName}");
 				return res;
 			}
 		}
@@ -142,14 +155,17 @@ public partial class GDXSprite2DImporter : EditorImportPlugin
 
 			// create relative paths if needed
 			var textureName = entry.name;
-			var texturePath = folderName.PathJoin(textureName);
+			var texturePath = texturesRootName.PathJoin(entry.name);
+			var spritePath = spritesRootName.PathJoin(entry.name);
 			if (entry.name.Contains('/'))
 			{
 				var ss = entry.name.Split('/', StringSplitOptions.RemoveEmptyEntries);
-				texturePath = folderName;
+				texturePath = texturesRootName;
+				spritePath = spritesRootName;
 				for (int j = 0; j < ss.Length - 1; j++)
 				{
 					texturePath = texturePath.PathJoin(ss[j]);
+					spritePath = spritePath.PathJoin(ss[j]);
 				}
 
 				res = dir.MakeDirRecursive(texturePath);
@@ -159,16 +175,46 @@ public partial class GDXSprite2DImporter : EditorImportPlugin
 					return res;
 				}
 
+				res = dir.MakeDirRecursive(spritePath);
+				if (res != Error.Ok)
+				{
+					GD.PrintErr($"Failed to create dir: {basePath}/{spritePath}");
+					return res;
+				}
+
 				textureName = ss[^1];
 				texturePath = texturePath.PathJoin(textureName);
+				spritePath = spritePath.PathJoin(textureName);
 			}
 
 			if (entry.index >= 0)
 			{
 				texturePath += $"_{entry.index}";
+				spritePath += $"_{entry.index}";
 			}
 
-			var spritePath = basePath.PathJoin(texturePath) + ".tscn";
+			var textureFilePath = basePath.PathJoin(texturePath) + ".tres";
+			var spriteFilePath = basePath.PathJoin(spritePath) + ".tscn";
+
+			// create/update atlas texture
+			
+			AtlasTexture atlasTexture = null;
+			if (dir.FileExists(textureFilePath))
+			{
+				atlasTexture = ResourceLoader.Load<AtlasTexture>(textureFilePath, "AtlasTexture", ResourceLoader.CacheMode.Replace);
+			}
+
+			atlasTexture = atlasTexture ?? new AtlasTexture();
+			atlasTexture.Atlas = sourceTexture;
+			atlasTexture.Region = entry.bounds;
+			res = ResourceSaver.Save(atlasTexture, textureFilePath);
+			if (res != Error.Ok)
+			{
+				GD.Print($"Failed to save: {textureFilePath} => {res}");
+				continue;
+			}
+
+			createdFiles.Add(textureFilePath);
 
 			// load/create sprite - attempt to first load sprite to keep any manual changes made to it
 			// except for those that this will overwrite, like Texture, RegionRect, etc
@@ -176,9 +222,9 @@ public partial class GDXSprite2DImporter : EditorImportPlugin
 			PackedScene spriteScene = null;
 			Sprite2D sprite = null;
 
-			if (dir.FileExists(spritePath))
+			if (dir.FileExists(spriteFilePath))
 			{
-				spriteScene = ResourceLoader.Load<PackedScene>(spritePath, "PackedScene", ResourceLoader.CacheMode.Replace);
+				spriteScene = ResourceLoader.Load<PackedScene>(spriteFilePath, "PackedScene", ResourceLoader.CacheMode.Replace);
 				if (spriteScene != null) sprite = spriteScene.Instantiate() as Sprite2D;
 			}
 
@@ -186,27 +232,27 @@ public partial class GDXSprite2DImporter : EditorImportPlugin
 			if (sprite == null) sprite = new Sprite2D();
 
 			sprite.Name = textureName;
-			sprite.Texture = sourceTexture;
+			sprite.Texture = atlasTexture; //sourceTexture;
 			sprite.TextureFilter = filter;
-			sprite.RegionEnabled = true;
-			sprite.RegionRect = entry.bounds;
+			//sprite.RegionEnabled = true;
+			//sprite.RegionRect = entry.bounds;
 
 			res = spriteScene.Pack(sprite);
 			if (res == Error.Ok)
 			{
-				res = ResourceSaver.Save(spriteScene, spritePath);
+				res = ResourceSaver.Save(spriteScene, spriteFilePath);
 				if (res == Error.Ok)
 				{
-					createdFiles.Add(spritePath);
+					createdFiles.Add(spriteFilePath);
 				}
 				else
 				{
-					GD.Print($"Failed to save: {spritePath} => {res}");
+					GD.Print($"Failed to save: {spriteFilePath} => {res}");
 				}
 			}
 			else
 			{
-				GD.Print($"Failed to pack Sprite2D in: {spritePath} => {res}");
+				GD.Print($"Failed to pack Sprite2D in: {spriteFilePath} => {res}");
 			}
 
 			sprite.Free();
